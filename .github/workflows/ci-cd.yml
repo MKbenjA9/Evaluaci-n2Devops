@@ -99,7 +99,7 @@ jobs:
           docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
 
       - name: Escaneo de Vulnerabilidades de Contenedor (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'order-manager:${{ github.sha }}'
           format: 'table'
