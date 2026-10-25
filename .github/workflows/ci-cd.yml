@@ -53,6 +53,12 @@ jobs:
             target/site/jacoco/
           retention-days: 7
 
+      - name: Configurar JDK 21 para SonarCloud
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
       - name: Análisis de Calidad y Seguridad SAST (SonarCloud/SonarQube)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,6 +68,8 @@ jobs:
             echo "::error ::SONAR_TOKEN no está configurado en GitHub Secrets. El análisis SonarCloud es obligatorio para IE3. Configure el secret y vuelva a ejecutar el pipeline."
             exit 1
           fi
+          echo "Versión de Java para análisis SonarCloud:"
+          java -version
           echo "Ejecutando análisis SonarCloud y evaluando Quality Gate..."
           mvn -B sonar:sonar \
             -Dsonar.host.url=https://sonarcloud.io \
@@ -70,6 +78,12 @@ jobs:
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
+
+      - name: Restaurar JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Empaquetar Artefacto JAR
         run: mvn -B package -DskipTests
