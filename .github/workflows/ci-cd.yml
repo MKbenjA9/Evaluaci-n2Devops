@@ -27,6 +27,7 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 1. Usar JDK 17 para la compilación y pruebas del proyecto
       - name: Configurar JDK 17 (Temurin)
         uses: actions/setup-java@v4
         with:
@@ -50,13 +51,20 @@ jobs:
             target/site/jacoco/
           retention-days: 7
 
+      # 2. Cambiar a JDK 21 EXCLUSIVAMENTE para ejecutar SonarCloud
+      - name: Configurar JDK 21 para Scanner SonarCloud
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
       - name: Análisis de Calidad y Seguridad SAST (SonarCloud)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           if [ -z "$SONAR_TOKEN" ]; then
-            echo "::error ::SONAR_TOKEN no está configurado en GitHub Secrets. El análisis SonarCloud es obligatorio para IE3."
+            echo "::error ::SONAR_TOKEN no está configurado en GitHub Secrets."
             exit 1
           fi
           mvn -B sonar:sonar \
@@ -66,6 +74,13 @@ jobs:
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
+
+      # 3. Volver a JDK 17 para empaquetar el artifact
+      - name: Configurar JDK 17 para Empaquetado
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Empaquetar Artefacto JAR
         run: mvn -B package -DskipTests
