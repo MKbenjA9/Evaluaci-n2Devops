@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout Código Fuente
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -89,7 +89,7 @@ jobs:
 
     steps:
       - name: Checkout Código Fuente
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Construir Imagen Docker
         run: |
