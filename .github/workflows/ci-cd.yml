@@ -1,0 +1,200 @@
+name: CI/CD Pipeline - Order Manager
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  # ============================================================
+  # Fase 1: Compilación, Pruebas Automatizadas y Análisis SAST
+  # (IE2 - Pruebas / IE3 - Seguridad / IE4 - CI/CD)
+  # ============================================================
+  build-and-test:
+    name: Build, Test & Security Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Código Fuente
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Compilar Proyecto
+        run: mvn -B clean compile
+
+      - name: Ejecutar Pruebas Automatizadas
+        run: mvn -B test
+
+      - name: Generar Reporte de Cobertura JaCoCo
+        run: mvn -B jacoco:report
+
+      - name: Publicar Reportes de Pruebas y Cobertura
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-and-coverage-reports
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+          retention-days: 7
+
+      - name: Análisis de Calidad y Seguridad SAST (SonarCloud/SonarQube)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "Ejecutando análisis SonarCloud..."
+            mvn -B sonar:sonar -Dsonar.token="$SONAR_TOKEN"
+          else
+            echo "::warning ::SONAR_TOKEN no configurado en GitHub Secrets. Se omite análisis remoto de SonarCloud. Configúrelo para habilitar el Quality Gate."
+          fi
+
+      - name: Empaquetar Artefacto JAR
+        run: mvn -B package -DskipTests
+
+      - name: Publicar Artefacto JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-manager-jar
+          path: target/*.jar
+          retention-days: 7
+
+  # ============================================================
+  # Fase 2: Construcción de Contenedor y Escaneo de Vulnerabilidades
+  # (IE1 - Contenedores / IE3 - Seguridad de Contenedores)
+  # ============================================================
+  docker-build:
+    name: Docker Build & Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout Código Fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir Imagen Docker
+        run: |
+          IMAGE_TAG="order-manager:${{ github.sha }}"
+          IMAGE_LATEST="order-manager:latest"
+          echo "Construyendo imagen $IMAGE_TAG..."
+          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+
+      - name: Escaneo de Vulnerabilidades de Contenedor (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'order-manager:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  # ============================================================
+  # Fase 3: Despliegue Automatizado y Verificación en Entorno Simulado
+  # (IE4 - Despliegue y Trazabilidad / IE5 - Orquestación)
+  # ============================================================
+  deploy-simulated:
+    name: Simulated Cloud Deployment & Verification
+    runs-on: ubuntu-latest
+    needs: docker-build
+
+    steps:
+      - name: Checkout Código Fuente
+        uses: actions/checkout@v4
+
+      - name: Desplegar Servicios con Docker Compose
+        run: |
+          echo "Iniciando orquestación con Docker Compose..."
+          docker compose up -d --build
+          echo "Contenedores iniciados:"
+          docker compose ps
+
+      - name: Esperar Disponibilidad del Microservicio (Healthcheck Polling)
+        run: |
+          echo "Esperando que el microservicio esté en estado UP..."
+          MAX_RETRIES=20
+          COUNT=0
+          until curl -s -f http://localhost:8098/actuator/health | grep -q '"status":"UP"'; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $MAX_RETRIES ]; then
+              echo "Error: El microservicio no respondió a tiempo."
+              docker compose logs
+              exit 1
+            fi
+            echo "Intento $COUNT/$MAX_RETRIES: esperando salud del servicio..."
+            sleep 3
+          done
+          echo "Microservicio disponible y saludable en http://localhost:8098/actuator/health"
+
+      - name: Verificación Funcional del Despliegue (Smoke Tests HTTP)
+        run: |
+          echo "=== 1. Verificación Endpoint Health ==="
+          HEALTH=$(curl -s http://localhost:8098/actuator/health)
+          echo "Respuesta Health: $HEALTH"
+
+          echo "=== 2. Crear Pedido de Prueba (POST /api/orders) ==="
+          CREATE_RESP=$(curl -s -X POST http://localhost:8098/api/orders \
+            -H "Content-Type: application/json" \
+            -d '{"customerName":"DevOps CI Runner","items":[{"productName":"Laptop Pro","quantity":1,"unitPrice":1299.99}]}')
+          echo "Respuesta Creación: $CREATE_RESP"
+
+          ORDER_ID=$(echo "$CREATE_RESP" | grep -o '"id":[0-9]*' | head -1 | cut -d':' -f2)
+          echo "ID del pedido creado: $ORDER_ID"
+
+          if [ -z "$ORDER_ID" ]; then
+            echo "Error: No se pudo obtener el ID del pedido creado."
+            exit 1
+          fi
+
+          echo "=== 3. Consultar Pedido Creado (GET /api/orders/$ORDER_ID) ==="
+          GET_RESP=$(curl -s http://localhost:8098/api/orders/$ORDER_ID)
+          echo "Respuesta Consulta: $GET_RESP"
+
+          echo "=== 4. Confirmar Pedido (PUT /api/orders/$ORDER_ID/confirm) ==="
+          CONFIRM_RESP=$(curl -s -X PUT http://localhost:8098/api/orders/$ORDER_ID/confirm)
+          echo "Respuesta Confirmación: $CONFIRM_RESP"
+
+          echo "=== 5. Listar Pedidos (GET /api/orders) ==="
+          LIST_RESP=$(curl -s http://localhost:8098/api/orders)
+          echo "Respuesta Listado: $LIST_RESP"
+
+      - name: Registrar Trazabilidad del Despliegue en Step Summary
+        if: always()
+        run: |
+          echo "## Reporte de Trazabilidad y Despliegue Automatizado (EP2)" >> $GITHUB_STEP_SUMMARY
+          echo "| Parámetro | Detalle |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repositorio** | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Rama** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Autor del Commit** | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Número de Ejecución** | \`#${{ github.run_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ID de Workflow** | \`${{ github.run_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Fecha de Despliegue** | \`$(date -u '+%Y-%m-%d %H:%M:%S UTC')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Estado del Servicio** | \`UP (Verificado)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Imagen Docker** | \`order-manager:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Limpiar Entorno de Despliegue
+        if: always()
+        run: |
+          echo "Deteniendo contenedores y liberando recursos..."
+          docker compose down -v

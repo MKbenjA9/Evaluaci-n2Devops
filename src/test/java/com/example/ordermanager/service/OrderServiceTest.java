@@ -215,4 +215,34 @@ class OrderServiceTest {
         when(repository.existsById(99L)).thenReturn(false);
         assertThrows(OrderNotFoundException.class, () -> service.deleteOrder(99L));
     }
+
+    @Test
+    @DisplayName("getOrdersByStatus: retorna lista filtrada")
+    void shouldReturnOrdersByStatus() {
+        when(repository.findByStatus(OrderStatus.CONFIRMED)).thenReturn(List.of(new Order("Juan")));
+        List<Order> result = service.getOrdersByStatus(OrderStatus.CONFIRMED);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    @DisplayName("shipOrder: falla si el pedido no está CONFIRMED")
+    void shouldFailShippingWhenNotConfirmed() {
+        Order order = new Order("Juan");
+        order.setId(1L);
+        order.setStatus(OrderStatus.PENDING);
+        when(repository.findById(1L)).thenReturn(Optional.of(order));
+
+        assertThrows(InvalidOrderStateException.class, () -> service.shipOrder(1L));
+    }
+
+    @Test
+    @DisplayName("deliverOrder: falla si el pedido no está SHIPPED")
+    void shouldFailDeliveringWhenNotShipped() {
+        Order order = new Order("Juan");
+        order.setId(1L);
+        order.setStatus(OrderStatus.CONFIRMED);
+        when(repository.findById(1L)).thenReturn(Optional.of(order));
+
+        assertThrows(InvalidOrderStateException.class, () -> service.deliverOrder(1L));
+    }
 }

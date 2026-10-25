@@ -1,0 +1,76 @@
+services:
+  # ============================================================
+  # Base de Datos PostgreSQL
+  # ============================================================
+  db:
+    image: postgres:16-alpine
+    container_name: order-manager-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-orderdb}
+      POSTGRES_USER: ${DB_USER:-orderuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-orderpass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - order-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-orderuser} -d ${DB_NAME:-orderdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ============================================================
+  # Microservicio Order Manager
+  # ============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: order-manager:latest
+    container_name: order-manager-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-orderdb}
+      DB_USER: ${DB_USER:-orderuser}
+      DB_PASSWORD: ${DB_PASSWORD:-orderpass}
+    ports:
+      - "8098:8098"
+    networks:
+      - order-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8098/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+# ============================================================
+# Volúmenes y Redes
+# ============================================================
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  order-network:
+    driver: bridge
