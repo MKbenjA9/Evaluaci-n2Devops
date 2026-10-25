@@ -37,11 +37,8 @@ jobs:
       - name: Compilar Proyecto
         run: mvn -B clean compile
 
-      - name: Ejecutar Pruebas Automatizadas
-        run: mvn -B test
-
-      - name: Generar Reporte de Cobertura JaCoCo
-        run: mvn -B jacoco:report
+      - name: Ejecutar Pruebas Automatizadas y Generar Cobertura
+        run: mvn -B test jacoco:report
 
       - name: Publicar Reportes de Pruebas y Cobertura
         uses: actions/upload-artifact@v4
@@ -53,24 +50,15 @@ jobs:
             target/site/jacoco/
           retention-days: 7
 
-      - name: Configurar JDK 21 para SonarCloud
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Análisis de Calidad y Seguridad SAST (SonarCloud/SonarQube)
+      - name: Análisis de Calidad y Seguridad SAST (SonarCloud)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           if [ -z "$SONAR_TOKEN" ]; then
-            echo "::error ::SONAR_TOKEN no está configurado en GitHub Secrets. El análisis SonarCloud es obligatorio para IE3. Configure el secret y vuelva a ejecutar el pipeline."
+            echo "::error ::SONAR_TOKEN no está configurado en GitHub Secrets. El análisis SonarCloud es obligatorio para IE3."
             exit 1
           fi
-          echo "Versión de Java para análisis SonarCloud:"
-          java -version
-          echo "Ejecutando análisis SonarCloud y evaluando Quality Gate..."
           mvn -B sonar:sonar \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.organization=mkbenja9 \
@@ -78,12 +66,6 @@ jobs:
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
-
-      - name: Restaurar JDK 17 (Temurin)
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
 
       - name: Empaquetar Artefacto JAR
         run: mvn -B package -DskipTests
