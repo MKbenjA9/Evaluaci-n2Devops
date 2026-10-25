@@ -183,12 +183,17 @@ docker compose down -v
 
 ---
 
-## 8. Configuraciones Manuales Necesarias
+## 8. Configuraciones Requeridas en SonarCloud y GitHub Actions
 
-Para habilitar la integración opcional con SonarCloud en GitHub Actions:
-1. Ir a **Settings > Secrets and variables > Actions** en el repositorio de GitHub.
-2. Añadir el secreto `SONAR_TOKEN` con el token generado desde [SonarCloud](https://sonarcloud.io).
-*(Nota: Si el secreto no está configurado, el pipeline continúa emitiendo una alerta controlada sin interrumpir el despliegue funcional verificado).*
+Para la integración obligatoria de análisis SAST con SonarCloud (IE3):
+1. **SonarQube Cloud:**
+   - Asegurarse de que el proyecto (`MKbenjA9_Evaluaci-n2Devops`) pertenezca a la organización (`mkbenja9`).
+   - Ir a **Administration > Analysis Method** y verificar que **Automatic Analysis** esté desactivado (**OFF**), seleccionando **GitHub Actions**.
+   - Generar un token de análisis en la cuenta de SonarCloud.
+2. **GitHub Secrets:**
+   - Ir a **Settings > Secrets and variables > Actions** en el repositorio de GitHub.
+   - Añadir el secreto `SONAR_TOKEN` con el token generado desde SonarCloud.
+   *(Nota: El pipeline requiere obligatoriamente `SONAR_TOKEN` y evalúa el Quality Gate; si el análisis falla o no supera el umbral de calidad, el pipeline detiene de inmediato el despliegue).*
 
 ---
 

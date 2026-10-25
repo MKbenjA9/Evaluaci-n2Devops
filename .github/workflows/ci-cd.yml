@@ -64,6 +64,9 @@ jobs:
           fi
           echo "Ejecutando análisis SonarCloud y evaluando Quality Gate..."
           mvn -B sonar:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.organization=mkbenja9 \
+            -Dsonar.projectKey=MKbenjA9_Evaluaci-n2Devops \
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
