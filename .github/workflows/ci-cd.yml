@@ -58,12 +58,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          if [ -n "$SONAR_TOKEN" ]; then
-            echo "Ejecutando análisis SonarCloud..."
-            mvn -B sonar:sonar -Dsonar.token="$SONAR_TOKEN"
-          else
-            echo "::warning ::SONAR_TOKEN no configurado en GitHub Secrets. Se omite análisis remoto de SonarCloud. Configúrelo para habilitar el Quality Gate."
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error ::SONAR_TOKEN no está configurado en GitHub Secrets. El análisis SonarCloud es obligatorio para IE3. Configure el secret y vuelva a ejecutar el pipeline."
+            exit 1
           fi
+          echo "Ejecutando análisis SonarCloud y evaluando Quality Gate..."
+          mvn -B sonar:sonar \
+            -Dsonar.token="$SONAR_TOKEN" \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300
 
       - name: Empaquetar Artefacto JAR
         run: mvn -B package -DskipTests
@@ -102,7 +105,8 @@ jobs:
             aquasec/trivy:latest image \
             --severity CRITICAL,HIGH \
             --ignore-unfixed \
-            --exit-code 0 \
+            --exit-code 1 \
+            --format table \
             "order-manager:${{ github.sha }}"
 
       - name: Desplegar Servicios con Docker Compose
