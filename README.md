@@ -209,5 +209,11 @@ En cumplimiento de las normativas éticas y formativas de la asignatura:
 > ### Reflexiones Personales y Conclusiones Individuales (Sin IA)
 > Conforme a la pauta oficial (*"Cada integrante debe incluir en la sección de conclusiones una reflexión personal, redactada sin apoyo de IA, explicando su aprendizaje y contribución al proyecto"*), este apartado queda reservado para la redacción manual de cada estudiante:
 > 
-> - **Estudiante 1:** `[Completar reflexión personal y aporte individual]`
-> - **Estudiante 2:** `[Completar reflexión personal y aporte individual]`
+### Reflexión Personal — Benjamin Jerez
+> ""
+
+### Reflexión Personal — Dylan Monroy
+> "Al trabajar en este encargo me di cuenta de lo mucho que la automatización nos evita errores tontos en el día a día. Pasar de correr los tests y armar los contenedores a mano a tener un pipeline que se encarga de todo ,Desde probar el código hasta empaquetar con Docker Compose.te da otra seguridad antes de subir cambios. Me sirvió bastante aprender a rastrear cada versión con el hash de Git y ver cómo el trabajo en equipo con las ramas y las alertas de Dependabot ayudan a que el proyecto no se vuelva un caos. En resumen, entendí que DevOps no es solo meter herramientas, sino armar un flujo ordenado y estable para que las cosas no se rompan en el camino."
+
+### Reflexión Personal — Nicolas Silva
+> ""
