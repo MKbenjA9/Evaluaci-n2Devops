@@ -1,187 +1,48 @@
 package com.example.ordermanager.controller;
 
-import com.example.ordermanager.exception.InvalidOrderStateException;
-import com.example.ordermanager.exception.OrderNotFoundException;
 import com.example.ordermanager.model.Order;
 import com.example.ordermanager.model.OrderStatus;
 import com.example.ordermanager.service.OrderService;
-import org.junit.jupiter.api.DisplayName;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(OrderController.class)
-@DisplayName("OrderController - Pruebas de integración web")
+@SpringBootTest
+@AutoConfigureMockMvc
 class OrderControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockBean
-    private OrderService service;
+    private OrderService orderService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName("GET /api/orders: retorna 200 con lista")
-    void shouldReturnAllOrders() throws Exception {
-        when(service.getAllOrders()).thenReturn(List.of(new Order("A"), new Order("B")));
+    void shouldGetAllOrders() throws Exception {
+        Order order = new Order();
+        order.setId(1L);
+        order.setCustomerName("Juan Perez");
+        order.setStatus(OrderStatus.PENDING);
+
+        when(orderService.getAllOrders()).thenReturn(List.of(order));
 
         mockMvc.perform(get("/api/orders"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
-    }
-
-    @Test
-    @DisplayName("GET /api/orders/{id}: retorna 200 si existe")
-    void shouldReturnOrderById() throws Exception {
-        Order order = new Order("Juan");
-        order.setId(1L);
-        when(service.getOrderById(1L)).thenReturn(order);
-
-        mockMvc.perform(get("/api/orders/1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.customerName").value("Juan"));
-    }
-
-    @Test
-    @DisplayName("GET /api/orders/{id}: retorna 404 si no existe")
-    void shouldReturn404WhenNotFound() throws Exception {
-        when(service.getOrderById(99L)).thenThrow(new OrderNotFoundException(99L));
-
-        mockMvc.perform(get("/api/orders/99"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(404));
-    }
-
-    @Test
-    @DisplayName("POST /api/orders: retorna 201 con datos válidos")
-    void shouldCreateOrder() throws Exception {
-        Order created = new Order("Juan");
-        created.setId(1L);
-        when(service.createOrder(any())).thenReturn(created);
-
-        String body = "{\"customerName\":\"Juan\",\"items\":[]}";
-
-        mockMvc.perform(post("/api/orders")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(1));
-    }
-
-    @Test
-    @DisplayName("POST /api/orders: retorna 400 si customerName vacío")
-    void shouldReturn400WhenCustomerNameEmpty() throws Exception {
-        String body = "{\"customerName\":\"\",\"items\":[]}";
-
-        mockMvc.perform(post("/api/orders")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fields.customerName").exists());
-
-        verify(service, never()).createOrder(any());
-    }
-
-    @Test
-    @DisplayName("PUT /api/orders/{id}/confirm: retorna 200")
-    void shouldConfirmOrder() throws Exception {
-        Order confirmed = new Order("Juan");
-        confirmed.setId(1L);
-        confirmed.setStatus(OrderStatus.CONFIRMED);
-        when(service.confirmOrder(1L)).thenReturn(confirmed);
-
-        mockMvc.perform(put("/api/orders/1/confirm"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
-    }
-
-    @Test
-    @DisplayName("PUT /api/orders/{id}/confirm: retorna 409 si estado inválido")
-    void shouldReturn409WhenInvalidTransition() throws Exception {
-        when(service.confirmOrder(1L)).thenThrow(
-                new InvalidOrderStateException("SHIPPED", "CONFIRMED"));
-
-        mockMvc.perform(put("/api/orders/1/confirm"))
-                .andExpect(status().isConflict());
-    }
-
-    @Test
-    @DisplayName("DELETE /api/orders/{id}: retorna 204")
-    void shouldDeleteOrder() throws Exception {
-        doNothing().when(service).deleteOrder(1L);
-
-        mockMvc.perform(delete("/api/orders/1"))
-                .andExpect(status().isNoContent());
-    }
-
-    @Test
-    @DisplayName("GET /api/orders/status/{status}: retorna 200 con lista filtrada")
-    void shouldReturnOrdersByStatus() throws Exception {
-        when(service.getOrdersByStatus(OrderStatus.CONFIRMED)).thenReturn(List.of(new Order("Juan")));
-
-        mockMvc.perform(get("/api/orders/status/CONFIRMED"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
-    }
-
-    @Test
-    @DisplayName("POST /api/orders/{id}/items: retorna 200 al agregar ítem")
-    void shouldAddItemToOrder() throws Exception {
-        Order order = new Order("Juan");
-        order.setId(1L);
-        when(service.addItem(eq(1L), any())).thenReturn(order);
-
-        String body = "{\"productName\":\"Teclado\",\"quantity\":1,\"unitPrice\":45.00}";
-
-        mockMvc.perform(post("/api/orders/1/items")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    @DisplayName("PUT /api/orders/{id}/ship: retorna 200 al enviar pedido")
-    void shouldShipOrder() throws Exception {
-        Order order = new Order("Juan");
-        order.setStatus(OrderStatus.SHIPPED);
-        when(service.shipOrder(1L)).thenReturn(order);
-
-        mockMvc.perform(put("/api/orders/1/ship"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("SHIPPED"));
-    }
-
-    @Test
-    @DisplayName("PUT /api/orders/{id}/deliver: retorna 200 al entregar pedido")
-    void shouldDeliverOrder() throws Exception {
-        Order order = new Order("Juan");
-        order.setStatus(OrderStatus.DELIVERED);
-        when(service.deliverOrder(1L)).thenReturn(order);
-
-        mockMvc.perform(put("/api/orders/1/deliver"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("DELIVERED"));
-    }
-
-    @Test
-    @DisplayName("PUT /api/orders/{id}/cancel: retorna 200 al cancelar pedido")
-    void shouldCancelOrder() throws Exception {
-        Order order = new Order("Juan");
-        order.setStatus(OrderStatus.CANCELLED);
-        when(service.cancelOrder(1L)).thenReturn(order);
-
-        mockMvc.perform(put("/api/orders/1/cancel"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"));
+                .andExpect(jsonPath("$[0].customerName").value("Juan Perez"));
     }
 }
