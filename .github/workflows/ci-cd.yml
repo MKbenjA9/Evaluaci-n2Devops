@@ -42,7 +42,7 @@ jobs:
         run: mvn -B test jacoco:report
 
       - name: Publicar Reportes de Pruebas y Cobertura
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-and-coverage-reports
@@ -87,7 +87,7 @@ jobs:
         run: mvn -B package -DskipTests
 
       - name: Publicar Artefacto JAR
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: order-manager-jar
           path: target/*.jar
