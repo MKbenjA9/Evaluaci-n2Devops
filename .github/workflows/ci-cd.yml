@@ -29,7 +29,7 @@ jobs:
 
       # 1. Usar JDK 17 para la compilación y pruebas del proyecto
       - name: Configurar JDK 17 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -53,7 +53,7 @@ jobs:
 
       # 2. Cambiar a JDK 21 EXCLUSIVAMENTE para ejecutar SonarCloud
       - name: Configurar JDK 21 para Scanner SonarCloud
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -77,7 +77,7 @@ jobs:
             -Dsonar.qualitygate.timeout=300
       # 3. Volver a JDK 17 para empaquetar el artifact
       - name: Configurar JDK 17 para Empaquetado
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
