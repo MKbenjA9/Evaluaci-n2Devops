@@ -75,7 +75,6 @@ jobs:
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
-
       # 3. Volver a JDK 17 para empaquetar el artifact
       - name: Configurar JDK 17 para Empaquetado
         uses: actions/setup-java@v4
