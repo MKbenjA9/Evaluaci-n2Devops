@@ -209,9 +209,7 @@ En cumplimiento de las normativas éticas y formativas de la asignatura:
 > ### Reflexiones Personales y Conclusiones Individuales (Sin IA)
 > Conforme a la pauta oficial (*"Cada integrante debe incluir en la sección de conclusiones una reflexión personal, redactada sin apoyo de IA, explicando su aprendizaje y contribución al proyecto"*), este apartado queda reservado para la redacción manual de cada estudiante:
 > 
-### Reflexión Personal — Benjamin Jerez
-> Reflexión Personal — Benjamín
-
+### Reflexión Personal — Benjamin 
 “Durante este proyecto aprendí la importancia de utilizar herramientas como Docker, GitHub Actions, SonarCloud y Trivy para automatizar procesos y mejorar la seguridad del código. También pude enfrentar y solucionar errores durante la configuración, lo que me ayudó a reforzar mis conocimientos. En conclusión, esta experiencia me permitió mejorar mis habilidades y comprender mejor cómo DevOps facilita el desarrollo de aplicaciones seguras y estables.”
 
 ### Reflexión Personal — Dylan Monroy
