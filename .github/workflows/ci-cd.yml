@@ -9,8 +9,10 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   # ============================================================
@@ -36,20 +38,38 @@ jobs:
           cache: 'maven'
 
       - name: Compilar Proyecto
-        run: mvn -B clean compile
+        run: |
+          started=$SECONDS
+          mvn -B clean compile
+          printf 'COMPILE_SECONDS=%s\n' "$((SECONDS - started))" >> "$GITHUB_ENV"
 
       - name: Ejecutar Pruebas Automatizadas y Generar Cobertura
-        run: mvn -B test jacoco:report
+        run: mvn -B verify
+
+      - name: Registrar cobertura medida
+        run: |
+          test -s target/jacoco.exec
+          test -s target/site/jacoco/index.html
+          python3 ci/metrics.py coverage target/site/jacoco/jacoco.xml "$COMPILE_SECONDS" > target/coverage-metrics.json
 
       - name: Publicar Reportes de Pruebas y Cobertura
         uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ !cancelled() }}
         with:
           name: test-and-coverage-reports
           path: |
             target/surefire-reports/
             target/site/jacoco/
           retention-days: 7
+
+      - name: Escanear secretos del árbol publicable
+        run: |
+          set -euo pipefail
+          snapshot=$(mktemp -d)
+          git archive "$GITHUB_SHA" | tar -x -C "$snapshot"
+          docker run --rm --network none -v "$snapshot:/scan:ro" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            dir /scan --config /scan/ci/gitleaks.toml --redact=100 --no-banner --exit-code 1
 
       # 2. Cambiar a JDK 21 EXCLUSIVAMENTE para ejecutar SonarCloud
       - name: Configurar JDK 21 para Scanner SonarCloud
@@ -59,7 +79,6 @@ jobs:
           distribution: 'temurin'
 
       - name: Análisis de Calidad y Seguridad SAST (SonarCloud)
-        if: github.actor != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -71,25 +90,15 @@ jobs:
           mvn -B sonar:sonar \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.organization=mkbenja9 \
-            -Dsonar.projectKey=MKbenjA9_Evaluaci-n2Devops \
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
-      # 3. Volver a JDK 17 para empaquetar el artifact
-      - name: Configurar JDK 17 para Empaquetado
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Empaquetar Artefacto JAR
-        run: mvn -B package -DskipTests
-
-      - name: Publicar Artefacto JAR
+      - name: Transferir cobertura validada
         uses: actions/upload-artifact@v4
         with:
-          name: order-manager-jar
-          path: target/*.jar
+          name: coverage-metrics
+          path: target/coverage-metrics.json
+          if-no-files-found: error
           retention-days: 7
 
   # ============================================================
@@ -100,42 +109,98 @@ jobs:
     name: Container Build, Scan, Simulated Deploy & Verification
     runs-on: ubuntu-latest
     needs: build-and-test
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+      COMPOSE_FILE: docker-compose.yml:.github/compose.ci.yml
+      ORDER_MANAGER_CI_IMAGE: order-manager:${{ github.sha }}
 
     steps:
       - name: Checkout Código Fuente
         uses: actions/checkout@v4
 
+      - name: Obtener cobertura validada
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-metrics
+          path: ${{ runner.temp }}
+
       - name: Construir Imagen Docker
         run: |
-          IMAGE_TAG="order-manager:${{ github.sha }}"
-          IMAGE_LATEST="order-manager:latest"
-          echo "Construyendo imagen $IMAGE_TAG y $IMAGE_LATEST..."
-          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+          docker build -t "$ORDER_MANAGER_CI_IMAGE" .
+          image_id=$(docker image inspect --format '{{.Id}}' "$ORDER_MANAGER_CI_IMAGE")
+          printf 'SCANNED_IMAGE_ID=%s\n' "$image_id" >> "$GITHUB_ENV"
 
-      - name: Escaneo de Vulnerabilidades de Imagen con Trivy
+      - name: Escanear vulnerabilidades y bloquear críticas
         run: |
-          echo "Iniciando escaneo de seguridad en imagen order-manager:${{ github.sha }}..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:latest image \
-            --severity CRITICAL,HIGH \
-            --ignore-unfixed \
-            --exit-code 0 \
-            --format table \
-            "order-manager:${{ github.sha }}"
+          mkdir -p "$RUNNER_TEMP/scan"
+          docker save -o "$RUNNER_TEMP/scan/order-manager.tar" "$SCANNED_IMAGE_ID"
+          docker run --rm -v "$RUNNER_TEMP/scan:/scan" "$TRIVY_IMAGE" image \
+            --input /scan/order-manager.tar --scanners vuln --severity HIGH,CRITICAL \
+            --format json --output /scan/trivy-vulnerabilities.json
+          docker run --rm --network none -v "$RUNNER_TEMP/scan:/scan:ro" "$TRIVY_IMAGE" convert \
+            --format table --severity CRITICAL --exit-code 1 /scan/trivy-vulnerabilities.json
+
+      - name: Publicar evidencia de vulnerabilidades
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-vulnerabilities
+          path: ${{ runner.temp }}/scan/trivy-vulnerabilities.json
+          retention-days: 7
+
+      - name: Bloquear secretos altos o críticos en la imagen
+        run: |
+          docker run --rm --network none -v "$RUNNER_TEMP/scan:/scan:ro" "$TRIVY_IMAGE" image \
+            --input /scan/order-manager.tar --scanners secret --severity HIGH,CRITICAL --exit-code 1 \
+            --format json --output /dev/null
+
+      - name: Preparar credenciales efímeras para Compose
+        id: compose_env
+        run: |
+          set -euo pipefail
+          db_password=$(openssl rand -hex 32)
+          grafana_password=$(openssl rand -hex 32)
+          echo "::add-mask::$db_password"
+          echo "::add-mask::$grafana_password"
+          {
+            printf 'DB_USER=order_ci\n'
+            printf 'DB_PASSWORD=%s\n' "$db_password"
+            printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$grafana_password"
+            printf 'DOCKER_SOCKET_GID=%s\n' "$(stat -c '%g' /var/run/docker.sock)"
+            printf 'COMPOSE_DISABLE_ENV_FILE=1\n'
+            printf 'COMPOSE_PROJECT_NAME=order-manager-ci\n'
+          } >> "$GITHUB_ENV"
+          DB_USER=order_ci DB_PASSWORD="$db_password" GRAFANA_ADMIN_PASSWORD="$grafana_password" \
+            COMPOSE_DISABLE_ENV_FILE=1 docker compose config --quiet
+
+      - name: Compilar y probar el proxy Docker
+        run: docker compose build docker-logs-proxy
 
       - name: Desplegar Servicios con Docker Compose
+        id: compose_deploy
         run: |
           echo "Iniciando orquestación con Docker Compose..."
-          docker compose up -d
+          python3 -c 'import time; print(time.monotonic_ns())' > "$RUNNER_TEMP/deploy-start-ns"
+          docker compose up -d --no-build
           echo "Contenedores iniciados:"
           docker compose ps
 
+      - name: Comprobar identidad de la imagen desplegada
+        run: |
+          container_id=$(docker compose ps -q app)
+          test -n "$container_id"
+          running_image=$(docker inspect --format '{{.Image}}' "$container_id")
+          printf 'Imagen escaneada: %s\nImagen ejecutada: %s\n' "$SCANNED_IMAGE_ID" "$running_image"
+          test "$running_image" = "$SCANNED_IMAGE_ID"
+          printf 'RUNNING_IMAGE_ID=%s\n' "$running_image" >> "$GITHUB_ENV"
+
       - name: Esperar Disponibilidad del Microservicio (Healthcheck Polling)
+        id: health
         run: |
           echo "Esperando que el microservicio esté en estado UP..."
           MAX_RETRIES=20
           COUNT=0
-          until curl -s -f http://localhost:8098/actuator/health | grep -q '"status":"UP"'; do
+          until curl --fail --silent http://127.0.0.1:8098/actuator/health | jq -e '.status == "UP" and .components.db.status == "UP"' >/dev/null; do
             COUNT=$((COUNT+1))
             if [ $COUNT -ge $MAX_RETRIES ]; then
               echo "Error: El microservicio no respondió a tiempo."
@@ -148,55 +213,76 @@ jobs:
           echo "Microservicio disponible y saludable en http://localhost:8098/actuator/health"
 
       - name: Verificación Funcional del Despliegue (Smoke Tests HTTP)
+        id: smoke
         run: |
-          echo "=== 1. Verificación Endpoint Health ==="
-          HEALTH=$(curl -s http://localhost:8098/actuator/health)
-          echo "Respuesta Health: $HEALTH"
-
-          echo "=== 2. Crear Pedido de Prueba (POST /api/orders) ==="
-          CREATE_RESP=$(curl -s -X POST http://localhost:8098/api/orders \
+          set -euo pipefail
+          orders=http://127.0.0.1:8098/api/orders
+          order_id=$(curl --fail --silent --show-error "$orders" \
             -H "Content-Type: application/json" \
-            -d '{"customerName":"DevOps CI Runner","items":[{"productName":"Laptop Pro","quantity":1,"unitPrice":1299.99}]}')
-          echo "Respuesta Creación: $CREATE_RESP"
+            -d '{"customerName":"DevOps CI Runner","items":[{"productName":"Laptop Pro","quantity":1,"unitPrice":1299.99}]}' \
+            | jq -er '.id | select(type == "number" and . > 0)')
+          curl --fail --silent --show-error "$orders/$order_id" \
+            | jq -e --argjson id "$order_id" '.id == $id and .status == "PENDING"' >/dev/null
+          curl --fail --silent --show-error -X PUT "$orders/$order_id/confirm" \
+            | jq -e --argjson id "$order_id" '.id == $id and .status == "CONFIRMED"' >/dev/null
+          curl --fail --silent --show-error "$orders" \
+            | jq -e --argjson id "$order_id" 'any(.[]; .id == $id and .status == "CONFIRMED")' >/dev/null
 
-          ORDER_ID=$(echo "$CREATE_RESP" | grep -o '"id":[0-9]*' | head -1 | cut -d':' -f2)
-          echo "ID del pedido creado: $ORDER_ID"
+          python3 ci/metrics.py deployment "$RUNNER_TEMP/coverage-metrics.json" \
+            "$(cat "$RUNNER_TEMP/deploy-start-ns")" "$GITHUB_REPOSITORY" "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/ci-metrics.json"
+          jq -r '"Compilación Maven: \(.compile_seconds) s. Despliegue Compose verificado: \(.deploy_seconds) s. Cobertura: \(.coverage_percent)%."' \
+            "$RUNNER_TEMP/ci-metrics.json" >> "$GITHUB_STEP_SUMMARY"
 
-          if [ -z "$ORDER_ID" ]; then
-            echo "Error: No se pudo obtener el ID del pedido creado."
-            exit 1
-          fi
+      - name: Publicar mediciones de CI
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-observability
+          path: ${{ runner.temp }}/ci-metrics.json
+          if-no-files-found: error
+          retention-days: 7
 
-          echo "=== 3. Consultar Pedido Creado (GET /api/orders/$ORDER_ID) ==="
-          GET_RESP=$(curl -s http://localhost:8098/api/orders/$ORDER_ID)
-          echo "Respuesta Consulta: $GET_RESP"
-
-          echo "=== 4. Confirmar Pedido (PUT /api/orders/$ORDER_ID/confirm) ==="
-          CONFIRM_RESP=$(curl -s -X PUT http://localhost:8098/api/orders/$ORDER_ID/confirm)
-          echo "Respuesta Confirmación: $CONFIRM_RESP"
-
-          echo "=== 5. Listar Pedidos (GET /api/orders) ==="
-          LIST_RESP=$(curl -s http://localhost:8098/api/orders)
-          echo "Respuesta Listado: $LIST_RESP"
-
-      - name: Registrar Trazabilidad del Despliegue en Step Summary
-        if: always()
+      - name: Extraer JAR de la imagen validada
         run: |
-          echo "## Reporte de Trazabilidad y Despliegue Automatizado (EP2)" >> $GITHUB_STEP_SUMMARY
-          echo "| Parámetro | Detalle |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Repositorio** | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Rama** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Autor del Commit** | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Número de Ejecución** | \`#${{ github.run_number }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **ID de Workflow** | \`${{ github.run_id }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Fecha de Despliegue** | \`$(date -u '+%Y-%m-%d %H:%M:%S UTC')\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Estado del Servicio** | \`UP (Verificado)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Imagen Docker** | \`order-manager:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          mkdir -p target
+          docker run --rm --pull never --network none --entrypoint cat "$SCANNED_IMAGE_ID" /app/app.jar > target/order-manager.jar
+          test -s target/order-manager.jar
+          jar_sha256=$(sha256sum target/order-manager.jar | cut -d ' ' -f 1)
+          jq -n --arg commit "$GITHUB_SHA" --arg tag "$ORDER_MANAGER_CI_IMAGE" \
+            --arg scanned "$SCANNED_IMAGE_ID" --arg running "$RUNNING_IMAGE_ID" \
+            --arg jar "$jar_sha256" \
+            '{commit: $commit, image_tag: $tag, scanned_image_id: $scanned, running_image_id: $running, jar_sha256: $jar}' \
+            > target/image-provenance.json
 
-      - name: Limpiar Entorno de Despliegue
+      - name: Publicar Artefacto JAR verificado
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-manager-jar
+          path: |
+            target/order-manager.jar
+            target/image-provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Limpiar entorno efímero de CI
+        if: always() && steps.compose_deploy.outcome != '' && steps.compose_deploy.outcome != 'skipped'
+        id: cleanup
+        run: docker compose down -v
+
+      - name: Resumen del despliegue simulado
         if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.compose_deploy.outcome }}
+          HEALTH_OUTCOME: ${{ steps.health.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
         run: |
-          echo "Deteniendo contenedores y liberando recursos..."
-          docker compose down -v
+          {
+            echo "## Despliegue simulado de Order Manager (EP3)"
+            printf 'Commit: %s\n\n' "$GITHUB_SHA"
+            printf '| Etapa | Resultado |\n|---|---|\n'
+            printf '| Compose | %s |\n' "${DEPLOY_OUTCOME:-skipped}"
+            printf '| Actuator y PostgreSQL | %s |\n' "${HEALTH_OUTCOME:-skipped}"
+            printf '| Pruebas HTTP | %s |\n' "${SMOKE_OUTCOME:-skipped}"
+            printf '| Limpieza | %s |\n' "${CLEANUP_OUTCOME:-skipped}"
+          } >> "$GITHUB_STEP_SUMMARY"

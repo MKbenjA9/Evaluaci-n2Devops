@@ -1,0 +1,26 @@
+{
+  "name": "order-manager-lab",
+  "version": "1.35",
+  "roleArn": "REPLACE_CLUSTER_ROLE_ARN",
+  "resourcesVpcConfig": {
+    "subnetIds": [
+      "REPLACE_SUBNET_1A",
+      "REPLACE_SUBNET_1B"
+    ],
+    "endpointPublicAccess": true,
+    "endpointPrivateAccess": true,
+    "publicAccessCidrs": [
+      "REPLACE_PUBLIC_IPV4_CIDR"
+    ]
+  },
+  "accessConfig": {
+    "authenticationMode": "API",
+    "bootstrapClusterCreatorAdminPermissions": true
+  },
+  "upgradePolicy": {
+    "supportType": "STANDARD"
+  },
+  "tags": {
+    "Project": "order-manager-lab"
+  }
+}

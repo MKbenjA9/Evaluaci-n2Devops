@@ -1,0 +1,52 @@
+controller:
+  type: deployment
+  replicas: 1
+
+rbac:
+  create: false
+
+serviceAccount:
+  create: false
+  name: alloy
+
+crds:
+  create: false
+
+service:
+  enabled: false
+
+configReloader:
+  enabled: false
+
+alloy:
+  enableReporting: false
+  livenessProbe:
+    httpGet:
+      path: /-/healthy
+      port: 12345
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+  configMap:
+    create: false
+    name: alloy-config
+    key: config.alloy
+  mounts:
+    varlog: false
+    dockercontainers: false
+  resources:
+    requests:
+      cpu: 75m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 473
+    runAsGroup: 473
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault

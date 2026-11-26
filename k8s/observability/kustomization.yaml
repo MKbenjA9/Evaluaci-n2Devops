@@ -1,0 +1,35 @@
+apiVersion: "kustomize.config.k8s.io/v1beta1"
+kind: "Kustomization"
+configMapGenerator:
+  -
+    name: "prometheus-config"
+    namespace: "monitoring"
+    files:
+      - "prometheus.yml"
+  -
+    name: "loki-config"
+    namespace: "monitoring"
+    files:
+      - "loki.yml"
+  -
+    name: "grafana-datasources"
+    namespace: "monitoring"
+    files:
+      - "grafana/datasources.yml"
+  -
+    name: "grafana-provider"
+    namespace: "monitoring"
+    files:
+      - "grafana/dashboards.yml"
+  -
+    name: "grafana-dashboards"
+    namespace: "monitoring"
+    files:
+      - "grafana/order-manager.json"
+  -
+    name: "alloy-config"
+    namespace: "monitoring"
+    files:
+      - "config.alloy"
+generatorOptions:
+  disableNameSuffixHash: true

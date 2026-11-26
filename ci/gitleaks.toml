@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Identificador público del proyecto SonarCloud"
+condition = "AND"
+paths = ['(?:^|/)sonar-project\.properties$']
+regexTarget = "secret"
+regexes = ['^MKbenjA9_Evaluaci-n2Devops$']

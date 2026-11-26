@@ -19,8 +19,35 @@ Thumbs.db
 
 # Secretos
 .env
-.env.local
 *.env
+*.env.*
+!.env.example
+.aws/
+.kube/
+aws-credentials*
+kubeconfig*
+*.kubeconfig
+*kubeconfig*.yaml
+*kubeconfig*.yml
+*kubeconfig*.json
+cluster.local.json
+token
+*.token
+*.tokens
+tokens/
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.tmp
+*.swp
+*~
 
 # Docker
 docker-compose.override.yml

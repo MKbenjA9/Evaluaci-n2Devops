@@ -8,16 +8,16 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-orderdb}
-      POSTGRES_USER: ${DB_USER:-orderuser}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-orderpass}
+      POSTGRES_USER: "${DB_USER:?Definir DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Definir DB_PASSWORD}"
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - order-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-orderuser} -d ${DB_NAME:-orderdb}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,10 +46,10 @@ services:
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-orderdb}
-      DB_USER: ${DB_USER:-orderuser}
-      DB_PASSWORD: ${DB_PASSWORD:-orderpass}
+      DB_USER: "${DB_USER:?Definir DB_USER}"
+      DB_PASSWORD: "${DB_PASSWORD:?Definir DB_PASSWORD}"
     ports:
-      - "8098:8098"
+      - "127.0.0.1:8098:8098"
     networks:
       - order-network
     healthcheck:
@@ -67,10 +67,82 @@ services:
 # ============================================================
 # Volúmenes y Redes
 # ============================================================
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - order-network
+
+  grafana:
+    image: grafana/grafana:13.3.1-ubuntu
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?Definir GRAFANA_ADMIN_PASSWORD}"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./k8s/observability/grafana/order-manager.json:/var/lib/grafana/dashboards/order-manager.json:ro
+    networks:
+      - order-network
+      - log-network
+
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/order-manager.yml"]
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/order-manager.yml:ro
+      - loki_data:/loki
+    networks:
+      - log-network
+
+  alloy:
+    image: grafana/alloy:v1.22.0
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    restart: unless-stopped
+    depends_on:
+      - loki
+      - docker-logs-proxy
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    networks:
+      - log-network
+      - docker-logs-network
+
+  docker-logs-proxy:
+    build: ./monitoring/docker-logs-proxy
+    restart: unless-stopped
+    user: "65534:65534"
+    group_add:
+      - "${DOCKER_SOCKET_GID:-0}"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-logs-network
+
 volumes:
+  loki_data:
+  alloy_data:
+  prometheus_data:
+  grafana_data:
   postgres_data:
     driver: local
 
 networks:
+  log-network:
+    internal: true
+  docker-logs-network:
+    internal: true
   order-network:
     driver: bridge

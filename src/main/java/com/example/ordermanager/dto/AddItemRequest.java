@@ -17,7 +17,7 @@ public class AddItemRequest {
 
     @NotNull(message = "El precio unitario es obligatorio")
     @DecimalMin(value = "0.01", message = "El precio debe ser mayor a 0")
-    @Digits(integer = 10, fraction = 2, message = "Formato de precio inválido")
+    @Digits(integer = 8, fraction = 2, message = "Formato de precio inválido")
     private BigDecimal unitPrice;
 
     public AddItemRequest() {}

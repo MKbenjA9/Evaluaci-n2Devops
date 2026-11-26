@@ -1,0 +1,4 @@
+services:
+  app:
+    image: ${ORDER_MANAGER_CI_IMAGE:?Definir ORDER_MANAGER_CI_IMAGE}
+    pull_policy: never
