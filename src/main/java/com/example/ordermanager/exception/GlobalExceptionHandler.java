@@ -1,11 +1,16 @@
 package com.example.ordermanager.exception;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -14,8 +19,11 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(OrderNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(OrderNotFoundException ex) {
+        log.warn("event=http_error status=404 category=order_not_found");
         return build(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
@@ -46,18 +54,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<Map<String, Object>> handleInvalidInput() {
+        return build(HttpStatus.BAD_REQUEST, "Solicitud inválida");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
+        if (ex instanceof ErrorResponse error && error.getStatusCode().is4xxClientError()) {
+            HttpStatus status = HttpStatus.valueOf(error.getStatusCode().value());
+            return ResponseEntity.status(status).headers(error.getHeaders())
+                    .body(errorBody(status, "Solicitud inválida"));
+        }
+        log.error("event=http_error status=500 category=internal_error");
         return build(HttpStatus.INTERNAL_SERVER_ERROR,
                 "Error interno del servidor. Contacte al administrador.");
     }
 
     private ResponseEntity<Map<String, Object>> build(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(errorBody(status, message));
+    }
+
+    private Map<String, Object> errorBody(HttpStatus status, String message) {
         Map<String, Object> body = new HashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", status.value());
         body.put("error", status.getReasonPhrase());
         body.put("message", message);
-        return ResponseEntity.status(status).body(body);
+        return body;
     }
 }

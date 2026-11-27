@@ -1,0 +1,22 @@
+{
+  "clusterName": "order-manager-lab",
+  "nodegroupName": "lab",
+  "nodeRole": "REPLACE_NODE_ROLE_ARN",
+  "subnets": [
+    "REPLACE_SUBNET_1A"
+  ],
+  "instanceTypes": [
+    "t3.large"
+  ],
+  "capacityType": "ON_DEMAND",
+  "amiType": "AL2023_x86_64_STANDARD",
+  "diskSize": 20,
+  "scalingConfig": {
+    "minSize": 1,
+    "maxSize": 1,
+    "desiredSize": 1
+  },
+  "tags": {
+    "Project": "order-manager-lab"
+  }
+}

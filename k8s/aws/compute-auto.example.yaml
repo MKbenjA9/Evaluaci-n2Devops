@@ -1,0 +1,42 @@
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: order-manager
+spec:
+  role: REPLACE_NODE_ROLE_NAME
+  subnetSelectorTerms:
+    - id: REPLACE_SUBNET_1A
+  securityGroupSelectorTerms:
+    - id: REPLACE_CLUSTER_SECURITY_GROUP
+  ephemeralStorage:
+    size: 30Gi
+  advancedNetworking:
+    associatePublicIPAddress: true
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: order-manager
+spec:
+  template:
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: order-manager
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: [m6i.large]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [on-demand]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: [us-east-1a]
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+  limits:
+    cpu: "2"
+    memory: 8Gi

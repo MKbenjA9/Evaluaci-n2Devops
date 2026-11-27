@@ -1,0 +1,71 @@
+discovery.kubernetes "orders" {
+  role = "pod"
+  namespaces {
+    names = ["order-manager"]
+  }
+}
+
+discovery.relabel "orders" {
+  targets = discovery.kubernetes.orders.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_container_name", "__meta_kubernetes_pod_container_port_name"]
+    regex         = "(order-manager;api|postgres;postgres);main"
+    action        = "keep"
+  }
+  rule {
+    target_label = "application"
+    replacement  = "order-manager"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    regex         = "api"
+    target_label  = "service"
+    replacement   = "app"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    regex         = "postgres"
+    target_label  = "service"
+    replacement   = "db"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+}
+
+loki.source.kubernetes "orders" {
+  targets    = discovery.relabel.orders.output
+  forward_to = [loki.process.safe_messages.receiver]
+}
+
+loki.process "safe_messages" {
+  forward_to = [loki.write.local.receiver]
+
+  stage.decolorize {}
+
+  stage.regex {
+    expression = `^\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d[^ ]* (?:UTC \[\d+\] )?\s*(?P<severity>TRACE|DEBUG|INFO|NOTICE|WARN(?:ING)?|ERROR|FATAL|PANIC|LOG)\b`
+  }
+
+  // Keep fixed event fragments only. Arbitrary log text can include SQL or customer data.
+  stage.regex {
+    expression = `(?P<safe_message>event=http_error status=404 category=order_not_found|event=http_error status=500 category=internal_error|Starting OrderManagerApplication|Started OrderManagerApplication|HHH90000025|database system is ready to accept connections|order_manager_observability_probe)`
+  }
+
+  stage.template {
+    source   = "safe_line"
+    template = `{{ if .severity }}{{ .severity }}{{ else }}LOG{{ end }} {{ if .safe_message }}{{ .safe_message }}{{ else }}[message withheld]{{ end }}`
+  }
+
+  stage.output {
+    source = "safe_line"
+  }
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

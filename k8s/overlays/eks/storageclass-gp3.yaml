@@ -1,0 +1,15 @@
+apiVersion: "storage.k8s.io/v1"
+kind: "StorageClass"
+metadata:
+  name: "order-manager-gp3"
+provisioner: "ebs.csi.eks.amazonaws.com"
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: eks.amazonaws.com/compute-type
+        values: [auto]
+parameters:
+  type: "gp3"
+  encrypted: "true"
+volumeBindingMode: "WaitForFirstConsumer"
+allowVolumeExpansion: true
+reclaimPolicy: "Retain"
