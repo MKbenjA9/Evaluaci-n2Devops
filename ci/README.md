@@ -35,6 +35,8 @@ El pipeline compila y ejecuta pruebas con Java 17, inicia el scanner Maven con J
 
 ## Mediciones y Grafana
 
+Consulta la [evidencia remota de la EP3](evidencias-ep3-remotas.md) para el run #38, sus digests publicados, las capturas y el procedimiento de importación aislada.
+
 | Medición | Inicio y fin | Evidencia |
 | --- | --- | --- |
 | Compilación Maven | Inicio y fin de `mvn clean compile`, en segundos de pared | `compile_seconds` |
@@ -119,10 +121,10 @@ En `main` y en cualquier otra rama protegida que ejecute este workflow, exigir p
 | --- | --- | --- | --- |
 | **IE1 · 20 %** | Actuator y Micrometer, Prometheus, Loki, Alloy y Grafana | Health, probes y scrape reales en Boot 4. Seis consultas PromQL pasaron. Alloy y Loki verificaron los eventos 404 y 500 sanitizados | Capturas finales en un entorno autorizado |
 | **IE2 · 20 %** | EKS estándar, Kustomize, Helm y aprovisionamiento de observabilidad | Render de los tres overlays aprobado, sustitución de registro y digest EKS probada con datos sintéticos y migración sobre PostgreSQL 16 aislado verificada. Nodo, pods y PVC tienen evidencia del despliegue previo | Validación de Boot 4 en Kubernetes cuando se autorice |
-| **IE3 · 10 %** | JaCoCo, reloj de CI, artefacto `ci-observability`, importador y Grafana | 85,05 % de líneas y 63,33 % de ramas, con HTML y XML generados. Dos consultas LogQL pasaron con datos sintéticos | Run exitoso de Actions, artefacto real importado y capturas de los dos paneles de CI |
-| **IE4 · 10 %** | Esta guía, documentación de Kubernetes e informes EP3 | Migración, comparación de CVE, trazabilidad de imagen y procedimiento de rotación documentados | Enlaces del run y capturas |
-| **IE5 · 20 %** | Maven, JaCoCo, Gitleaks, SonarCloud, Trivy y checks de rama | 38 pruebas Maven y gate de 75 % aprobados. Trivy registró cero altos y críticos. Coincidieron la imagen escaneada, la imagen ejecutada y el JAR extraído por ID | Quality Gate remoto, artefacto con procedencia y protección efectiva de rama |
-| **IE6 · 20 %** | Códigos de salida obligatorios y dependencia entre jobs | Negativas de Maven, JaCoCo y Gitleaks devolvieron 1. Gate Trivy devolvió 1 con Boot 3.5 y 0 con Boot 4. Comparar IDs de imagen distintos devolvió 1 | Run remoto negativo que muestre despliegue omitido |
+| **IE3 · 10 %** | JaCoCo, reloj de CI, artefacto `ci-observability`, importador y Grafana | Validado funcionalmente. Run #38: 85,0515 % de líneas, compilación 15 s, despliegue 46,54 s y pipeline 270 s. Evento real importado, dos consultas LogQL verificadas y seis consultas PromQL verificadas con tráfico local aislado | Capturar el dashboard en los rangos documentados |
+| **IE4 · 10 %** | Esta guía, documentación de Kubernetes e informes EP3 | Migración, comparación de CVE, trazabilidad de imagen, procedimiento de rotación y resultados de los runs #38 y #39 documentados | Completar capturas y archivar logs y ZIP originales |
+| **IE5 · 20 %** | Maven, JaCoCo, Gitleaks, SonarCloud, Trivy y checks de rama | Remoto: cinco ZIP con hash verificado, 38 pruebas aprobadas, 85,0515 % de líneas, cero vulnerabilidades altas/críticas y tres checks aprobados. Hash del JAR e IDs de procedencia verificados en los ZIP | Reconciliar el ID de Trivy con el de Docker, obtener logs, capturar SonarCloud y verificar protección efectiva de `main` tras autorización |
+| **IE6 · 20 %** | Códigos de salida obligatorios y dependencia entre jobs | Validado funcionalmente. Local: Maven salió con 1. Remoto: PR #14 en borrador, run #39 con Maven en `failure` y despliegue en `skipped` sin pasos | Descargar el ZIP de diagnóstico y los logs originales, verificar el hash y guardar capturas |
 
 En el EKS del laboratorio, los cuatro PVC de PostgreSQL, Prometheus, Grafana y Loki usan directorios del disco raíz del nodo con afinidad local. Ante reemplazo o terminación del nodo pueden quedar inaccesibles y los datos se pueden perder. `Retain` se aplica al PV y el disco raíz sigue el ciclo de vida de EC2. Una restauración en otro nodo requiere respaldo externo. Los indicadores entregados no exigen EBS CSI explícitamente. Consulta el [procedimiento EKS y sus limitaciones](../k8s/overlays/eks-local-storage/README.md).
 

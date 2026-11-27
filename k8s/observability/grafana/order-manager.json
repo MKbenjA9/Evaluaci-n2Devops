@@ -177,7 +177,7 @@
     {
       "id": 7,
       "title": "Cobertura de líneas en CI",
-      "description": "Cobertura JaCoCo de la última ejecución importada en los últimos siete días.",
+      "description": "Cobertura de líneas JaCoCo de la última ejecución importada en los últimos siete días. El umbral mínimo de aceptación es 75 %. Verde indica cumplimiento y rojo indica cobertura inferior al umbral.",
       "type": "stat",
       "gridPos": {
         "x": 0,
@@ -203,7 +203,26 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "noValue": "Sin medición importada"
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "Sin medición importada",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 75
+              }
+            ]
+          }
         },
         "overrides": []
       },
@@ -215,13 +234,14 @@
           ],
           "fields": ""
         },
+        "colorMode": "value",
         "graphMode": "none"
       }
     },
     {
       "id": 8,
       "title": "Tiempo de despliegue en CI",
-      "description": "Desde Compose up hasta completar las pruebas HTTP del runner.",
+      "description": "Duración del despliegue simulado desde Compose up hasta completar las pruebas HTTP del runner de GitHub Actions. No corresponde a la duración total del pipeline.",
       "type": "stat",
       "gridPos": {
         "x": 12,
@@ -247,6 +267,8 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "decimals": 2,
+          "min": 0,
           "noValue": "Sin medición importada"
         },
         "overrides": []
@@ -259,6 +281,7 @@
           ],
           "fields": ""
         },
+        "colorMode": "none",
         "graphMode": "none"
       }
     }
