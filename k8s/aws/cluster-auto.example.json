@@ -1,0 +1,32 @@
+{
+  "name": "order-manager-eks",
+  "version": "1.35",
+  "roleArn": "REPLACE_CLUSTER_ROLE_ARN",
+  "resourcesVpcConfig": {
+    "subnetIds": ["REPLACE_SUBNET_1A", "REPLACE_SUBNET_1B"],
+    "endpointPublicAccess": true,
+    "endpointPrivateAccess": true,
+    "publicAccessCidrs": ["REPLACE_OPERATOR_IPV4_32"]
+  },
+  "computeConfig": {
+    "enabled": true,
+    "nodePools": []
+  },
+  "kubernetesNetworkConfig": {
+    "elasticLoadBalancing": { "enabled": true }
+  },
+  "storageConfig": {
+    "blockStorage": { "enabled": true }
+  },
+  "accessConfig": {
+    "authenticationMode": "API",
+    "bootstrapClusterCreatorAdminPermissions": true
+  },
+  "upgradePolicy": {
+    "supportType": "STANDARD"
+  },
+  "bootstrapSelfManagedAddons": false,
+  "tags": {
+    "Project": "order-manager-eks"
+  }
+}

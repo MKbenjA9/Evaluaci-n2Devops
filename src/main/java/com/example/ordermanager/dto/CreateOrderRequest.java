@@ -2,6 +2,7 @@ package com.example.ordermanager.dto;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.util.ArrayList;
@@ -14,7 +15,7 @@ public class CreateOrderRequest {
     private String customerName;
 
     @Valid
-    private List<AddItemRequest> items = new ArrayList<>();
+    private List<@NotNull(message = "El ítem es obligatorio") AddItemRequest> items = new ArrayList<>();
 
     public CreateOrderRequest() {}
 

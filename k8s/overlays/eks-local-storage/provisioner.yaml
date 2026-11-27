@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: order-manager-storage
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: local-path-provisioner
+  namespace: order-manager-storage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: local-path-helpers
+  namespace: order-manager-storage
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [local-path-config]
+    verbs: [get]
+  # The provisioner's readiness endpoint lists ConfigMaps in its own namespace.
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: local-path-helpers
+  namespace: order-manager-storage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: local-path-helpers
+subjects:
+  - kind: ServiceAccount
+    name: local-path-provisioner
+    namespace: order-manager-storage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: order-manager-local-path
+rules:
+  - apiGroups: [""]
+    resources: [nodes, persistentvolumeclaims, pods]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: order-manager-local-path
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: order-manager-local-path
+subjects:
+  - kind: ServiceAccount
+    name: local-path-provisioner
+    namespace: order-manager-storage
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: local-path-config
+  namespace: order-manager-storage
+data:
+  config.json: |
+    {
+      "storageClassConfigs": {
+        "order-manager-local": {
+          "nodePathMap": [
+            {"node": "DEFAULT_PATH_FOR_NON_LISTED_NODES", "paths": ["/opt/order-manager-storage"]}
+          ]
+        }
+      }
+    }
+  setup: |
+    #!/bin/sh
+    set -eu
+    mkdir -m 0770 -p -- "$VOL_DIR"
+  teardown: |
+    #!/bin/sh
+    set -eu
+    if [ -d "$VOL_DIR" ]; then rmdir -- "$VOL_DIR"; fi
+  helperPod.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: helper-pod
+          image: docker.io/library/busybox:1.37.0
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: local-path-provisioner
+  namespace: order-manager-storage
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: local-path-provisioner
+  template:
+    metadata:
+      labels:
+        app: local-path-provisioner
+    spec:
+      serviceAccountName: local-path-provisioner
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provisioner
+          image: docker.io/rancher/local-path-provisioner:v0.0.37
+          command: [local-path-provisioner, start, --config, /etc/config/config.json]
+          env:
+            - name: SERVICE_ACCOUNT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CONFIG_MOUNT_PATH
+              value: /etc/config/
+            - name: HEALTH_PORT
+              value: "8080"
+          ports:
+            - name: health
+              containerPort: 8080
+          startupProbe:
+            httpGet: {path: /health, port: health}
+            failureThreshold: 12
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: {path: /ready, port: health}
+          livenessProbe:
+            httpGet: {path: /health, port: health}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config/
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: local-path-config

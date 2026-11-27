@@ -1,201 +1,108 @@
-# Order Manager API — Evaluación Parcial 2 (DOY0101)
+# Order Manager API — Evaluación Parcial 3 de Ingeniería DevOps (DOY0101)
 
-Este repositorio contiene la solución completa para la **Evaluación Parcial N°2 de Ingeniería DevOps (DOY0101)**, automatizando el ciclo de vida del microservicio **Order Manager** mediante contenedores, pruebas automatizadas, análisis de seguridad, orquestación y un pipeline CI/CD robusto implementado en GitHub Actions.
+Order Manager es una API REST para crear pedidos, agregar ítems y avanzar su estado. La Evaluación Parcial 3 incorpora observabilidad en Docker Compose y despliegues en Kubernetes con kind y Amazon EKS.
 
----
+## Arquitectura
 
-## 1. Arquitectura y Tecnologías
+| Capa | Componentes |
+| --- | --- |
+| Aplicación | Java 17, Spring Boot 4.0.10, Spring Data JPA, Validation, Actuator y Micrometer |
+| Datos | PostgreSQL 16 con almacenamiento persistente. El perfil Maven local utiliza H2 en memoria |
+| Métricas | Prometheus recolecta `/actuator/prometheus`. Grafana aprovisiona el dashboard Order Manager API |
+| Logs | Alloy filtra registros de la API y PostgreSQL. Loki configura una retención de siete días |
+| Ejecución | Docker Compose, Kustomize y Helm. El Dockerfile multietapa compila con Maven y ejecuta con un usuario sin privilegios |
+| CI | GitHub Actions ejecuta Maven, JaCoCo, Gitleaks, SonarCloud, Trivy y un despliegue simulado con pruebas HTTP |
 
-El microservicio gestiona pedidos de comercio electrónico con la siguiente pila tecnológica:
+En Compose, Alloy lee los dos contenedores permitidos mediante un proxy. El proxy tiene acceso al socket de Docker y queda reservado para el laboratorio local. En Kubernetes, Alloy usa la API de Kubernetes con RBAC acotado al namespace de la aplicación. Consulta el [diseño y pruebas del proxy](monitoring/docker-logs-proxy/README.md) y la [guía de Kubernetes](k8s/README.md).
 
-- **Lenguaje y Framework:** Java 17, Spring Boot 3.3.4 (Spring Data JPA, Spring Web, Validation, Actuator).
-- **Gestión de Construcción:** Maven 3.9+ con plugin de cobertura JaCoCo y Sonar Scanner.
-- **Bases de Datos:**
-  - H2 Database (en memoria) para ejecución local rápida y suite de pruebas automatizadas.
-  - PostgreSQL 16 (Alpine) para ejecución en contenedores y entorno productivo.
-- **Contenerización:** Docker con Dockerfile multi-stage optimizado (Alpine Linux JRE) y usuario no-root.
-- **Orquestación:** Docker Compose con control de dependencias basadas en healthchecks y límites de recursos.
-- **Integración y Entrega Continua (CI/CD):** GitHub Actions (`.github/workflows/ci-cd.yml`).
-- **Seguridad:** Dependabot (`.github/dependabot.yml`), escaneo SAST (SonarCloud/SonarQube) y análisis de vulnerabilidades en imágenes con Trivy.
+## Docker Compose
 
----
+Requisitos para Windows. Docker Desktop con contenedores Linux, Docker Compose v2 y PowerShell. Ejecuta los comandos desde la raíz. Para una instalación nueva, copia la plantilla y configura ambas contraseñas en el archivo local.
 
-## 2. Ejecución del Proyecto
-
-### 2.1 Requisitos Previos
-- Java 17 (JDK)
-- Apache Maven 3.8+
-- Docker Engine y Docker Compose v2+
-
-### 2.2 Ejecución Local con Maven (H2 Database)
-```bash
-# Compilar y ejecutar pruebas
-mvn clean test
-
-# Iniciar la aplicación en puerto 8098
-mvn spring-boot:run
-```
-La aplicación iniciará en `http://localhost:8098`.
-- Consola H2: `http://localhost:8098/h2-console` (JDBC URL: `jdbc:h2:mem:orderdb`, Usuario: `sa`, Contraseña: vacía)
-- Salud del microservicio: `http://localhost:8098/actuator/health`
-
----
-
-## 3. Contenedores Docker (IE1 — 20%)
-
-El microservicio se empaqueta utilizando un [`Dockerfile`](file:///Dockerfile) con las mejores prácticas de la industria:
-
-1. **Construcción Multi-Stage:**
-   - **Etapa de Construcción (`builder`):** Utiliza `maven:3.9.9-eclipse-temurin-17-alpine` para descargar dependencias y compilar el archivo JAR de manera reproducible.
-   - **Etapa de Ejecución (`runtime`):** Utiliza `eclipse-temurin:17-jre-alpine`, reduciendo la superficie de ataque y el tamaño final de la imagen (~180MB).
-2. **Seguridad y Principio de Menor Privilegio:** Se crea y asigna un usuario sin privilegios `appuser:appgroup` en lugar de ejecutar como root.
-3. **Parámetros de Rendimiento:** Configuración de opciones JVM optimizadas (`-Xms256m -Xmx512m -XX:+UseG1GC`).
-4. **Healthcheck Integrado:** Verificación periódica del estado del microservicio vía `wget` a `/actuator/health`.
-5. **Contexto Limpio:** [`..dockerignore`](file:///.dockerignore) excluye archivos innecesarios (código fuente superfluo, binarios locales, documentación) para agilizar la transferencia y construcción.
-
-### Comandos de Construcción y Ejecución Docker
-```bash
-# Construir la imagen Docker
-docker build -t order-manager:latest .
-
-# Ejecutar el contenedor en modo aislado
-docker run -d -p 8098:8098 --name order-manager-app order-manager:latest
-
-# Comprobar estado y logs
-docker ps
-docker logs -f order-manager-app
-```
-
----
-
-## 4. Pruebas Automatizadas (IE2 — 20%)
-
-El proyecto cuenta con una batería completa de pruebas unitarias y de integración que validan los flujos críticos del negocio:
-
-- **[`OrderServiceTest`](file:///src/test/java/com/example/ordermanager/service/OrderServiceTest.java):**
-  - Creación de pedidos con y sin ítems.
-  - Modificación de pedidos en estado `PENDING` y bloqueo de modificaciones en estados avanzados.
-  - Máquina de estados finita: transiciones válidas (`PENDING` → `CONFIRMED` → `SHIPPED` → `DELIVERED`).
-  - Validación de transiciones prohibidas (cancelar un pedido entregado, enviar un pedido pendiente, etc.).
-  - Manejo de excepciones de negocio (`OrderNotFoundException`, `InvalidOrderStateException`).
-  - Consultas y filtrado por estado (`getOrdersByStatus`).
-- **[`OrderControllerTest`](file:///src/test/java/com/example/ordermanager/controller/OrderControllerTest.java):**
-  - Validación de endpoints HTTP REST (códigos 200, 201, 204, 400 Bad Request, 404 Not Found, 409 Conflict).
-  - Validación de payloads con Bean Validation (`@Valid`, validación de `customerName`, precios y cantidades).
-
-### Ejecución de Pruebas y Cobertura
-```bash
-# Ejecutar todas las pruebas unitarias e integración
-mvn clean test
-
-# Generar reporte de cobertura JaCoCo
-mvn jacoco:report
-```
-El reporte HTML de cobertura se genera en `target/site/jacoco/index.html`.
-En el pipeline de GitHub Actions, cualquier fallo en una prueba interrumpe de forma inmediata la ejecución del flujo de integración continua, bloqueando el avance a las etapas de empaquetado y despliegue.
-
----
-
-## 5. Seguridad y Escalabilidad (IE3 — 20%)
-
-### 5.1 Dependabot (`.github/dependabot.yml`)
-Configurado para monitorear semanalmente:
-- Ecosistema **Maven** (`pom.xml`): Actualización de librerías, parches de seguridad y frameworks.
-- Ecosistema **GitHub Actions** (`.github/workflows/`): Versiones actualizadas y seguras de las acciones utilizadas.
-
-### 5.2 Análisis SAST (SonarQube / SonarCloud)
-Configurado mediante [`sonar-project.properties`](file:///sonar-project.properties) y el plugin Maven oficial:
-- Mapea código fuente (`src/main/java`), pruebas (`src/test/java`), binarios (`target/classes`) y reporte XML de JaCoCo.
-- En el pipeline se ejecuta mediante autenticación segura con `SONAR_TOKEN`.
-- Emite advertencias / bloqueos si no se superan los umbrales de calidad de código o si existen vulnerabilidades detectadas.
-
-### 5.3 Escaneo de Vulnerabilidades de Imagen (Trivy)
-En cada build, la acción de seguridad Aquasecurity Trivy escanea la imagen Docker construida, auditando tanto los paquetes del sistema operativo base (Alpine) como las librerías Java embebidas, alertando ante severidades `CRITICAL` y `HIGH`.
-
-### 5.4 Parámetros de Escalabilidad y Gobernanza
-- **Límites de recursos en Docker Compose:** CPU limitada a `1.0` y Memoria limitada a `512M` por servicio.
-- **Políticas de reinicio:** `restart: unless-stopped` para alta disponibilidad ante fallos inesperados.
-- **Aislamiento de red:** Red dedicada bridge `order-network` sin exposición indebida de puertos internos.
-- **Gestión de Credenciales:** Parámetros configurables mediante variables de entorno (`DB_USER`, `DB_PASSWORD`), sin contraseñas en código duro.
-
----
-
-## 6. Pipeline CI/CD y Despliegue Automatizado (IE4 — 20%)
-
-El workflow oficial se ubica en [`.github/workflows/ci-cd.yml`](file:///.github/workflows/ci-cd.yml) y se dispara ante cualquier `push` o `pull_request` a la rama `main`, además de soportar ejecución manual (`workflow_dispatch`).
-
-```mermaid
-flowchart LR
-    A["1. Build & Test<br>(Compile, Unit Tests, JaCoCo, SAST)"] --> B["2. Docker Build & Scan<br>(Multi-stage, Trivy Scan)"]
-    B --> C["3. Simulated Cloud Deploy<br>(Docker Compose Up, Health Polling)"]
-    C --> D["4. Smoke Tests & Verification<br>(HTTP REST API Tests)"]
-    D --> E["5. Traceability Summary<br>(Commit SHA, Actor, Run ID)"]
-```
-
-### Etapas del Pipeline:
-1. **Compilación y Pruebas Automatizadas:** Configura JDK 17, compila con Maven y ejecuta las pruebas. Si una prueba falla, el pipeline se detiene inmediatamente.
-2. **Análisis de Calidad y Seguridad:** Ejecución de JaCoCo y análisis SAST con SonarCloud (usando secretos de GitHub).
-3. **Construcción y Escaneo de Imagen Docker:** Compila la imagen etiquetándola con el SHA del commit (`order-manager:${{ github.sha }}`) y escanea vulnerabilidades con Trivy.
-4. **Despliegue Automatizado en Entorno Simulado:**
-   - Levanta el stack completo con `docker compose up -d --build`.
-   - Implementa un ciclo de espera activo (polling) contra `http://localhost:8098/actuator/health` hasta confirmar estado `UP`.
-5. **Verificación Funcional (Smoke Tests):**
-   - Prueba real de creación de pedido mediante `POST /api/orders`.
-   - Consulta del pedido creado con `GET /api/orders/{id}`.
-   - Confirmación del pedido mediante `PUT /api/orders/{id}/confirm`.
-   - Listado de pedidos con `GET /api/orders`.
-6. **Trazabilidad de Commits y Ejecuciones:**
-   - Publica en `$GITHUB_STEP_SUMMARY` la metadata completa: Commit SHA, Autor, Número de ejecución, Workflow ID, Fecha UTC y Hash de la imagen Docker.
-
----
-
-## 7. Orquestación con Docker Compose (IE5 — 20%)
-
-El archivo [`docker-compose.yml`](file:///docker-compose.yml) orquesta la solución completa de microservicios:
-
-| Servicio | Imagen | Puerto | Rol | Healthcheck |
-|---|---|---|---|---|
-| `db` | `postgres:16-alpine` | `5432:5432` | Persistencia relacional de pedidos | `pg_isready -U orderuser -d orderdb` |
-| `app` | `order-manager:latest` | `8098:8098` | API REST Spring Boot | `wget -qO- /actuator/health` |
-
-### Características de la Orquestación:
-- **Secuenciamiento Condicional:** El servicio `app` depende estrictamente de que `db` alcance estado saludable (`condition: service_healthy`), evitando errores de conexión durante el arranque.
-- **Persistencia de Datos:** Volumen persistente `postgres_data` montado en `/var/lib/postgresql/data`.
-- **Segmentación de Red:** Red interna `order-network` tipo bridge.
-
-### Comandos de Orquestación:
-```bash
-# Iniciar servicios en segundo plano con reconstrucción de imágenes
+~~~powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+notepad .env
+docker compose config --quiet
 docker compose up -d --build
-
-# Verificar estado de los contenedores y healthchecks
 docker compose ps
+~~~
 
-# Visualizar logs en tiempo real
-docker compose logs -f
+| Variable | Uso |
+| --- | --- |
+| `DB_USER` | Obligatoria. Usuario inicial de PostgreSQL y usuario de la API |
+| `DB_PASSWORD` | Obligatoria. Contraseña de PostgreSQL y de la conexión desde la API |
+| `GRAFANA_ADMIN_PASSWORD` | Obligatoria. Contraseña inicial del administrador de Grafana |
+| `DB_NAME` | Opcional. Base de datos, por defecto `orderdb` |
+| `DOCKER_SOCKET_GID` | Opcional. Grupo con acceso al socket del motor Docker, por defecto `0`. Configura el GID real si difiere |
 
-# Probar endpoint de la API
-curl -X GET http://localhost:8098/api/orders
+Guarda valores únicos en el archivo local ignorado o en el entorno del proceso. Si reutilizas un volumen, configura el usuario, nombre de base de datos y credenciales vigentes. Cambiar las variables de inicialización por sí solo no rota las credenciales de PostgreSQL ni Grafana. La contraseña histórica de PostgreSQL está retirada de la configuración y permanece en el historial de Git. Coordina su rotación donde se haya usado antes de compartir o publicar el repositorio.
 
-# Detener servicios y liberar volúmenes
-docker compose down -v
-```
+### Verificación local
 
----
+| Servicio | Acceso Compose |
+| --- | --- |
+| API | [http://127.0.0.1:8098](http://127.0.0.1:8098/actuator/health) |
+| PostgreSQL | `127.0.0.1:5432` |
+| Prometheus | [http://127.0.0.1:9090](http://127.0.0.1:9090/targets) |
+| Grafana | [http://127.0.0.1:3000](http://127.0.0.1:3000/) |
 
-## 8. Configuraciones Requeridas en SonarCloud y GitHub Actions
+Loki, Alloy y el proxy se comunican por redes internas. La API de laboratorio carece de autenticación. Usa pedidos sintéticos.
 
-Para la integración obligatoria de análisis SAST con SonarCloud (IE3):
-1. **SonarQube Cloud:**
-   - Asegurarse de que el proyecto (`MKbenjA9_Evaluaci-n2Devops`) pertenezca a la organización (`mkbenja9`).
-   - Ir a **Administration > Analysis Method** y verificar que **Automatic Analysis** esté desactivado (**OFF**), seleccionando **GitHub Actions**.
-   - Generar un token de análisis en la cuenta de SonarCloud.
-2. **GitHub Secrets:**
-   - Ir a **Settings > Secrets and variables > Actions** en el repositorio de GitHub.
-   - Añadir el secreto `SONAR_TOKEN` con el token generado desde SonarCloud.
-   *(Nota: El pipeline requiere obligatoriamente `SONAR_TOKEN` y evalúa el Quality Gate; si el análisis falla o no supera el umbral de calidad, el pipeline detiene de inmediato el despliegue).*
+~~~powershell
+Invoke-RestMethod http://127.0.0.1:8098/actuator/health
+(Invoke-WebRequest http://127.0.0.1:8098/actuator/prometheus).StatusCode
+Invoke-RestMethod http://127.0.0.1:8098/api/orders
+(Invoke-RestMethod http://127.0.0.1:9090/api/v1/targets).data.activeTargets |
+    Select-Object health, lastError
+~~~
 
----
+En Grafana abre **Dashboards → Order Manager API**. Los seis paneles operativos muestran CPU, heap JVM, disponibilidad de recolección, tasa HTTP, respuestas 4xx/5xx y latencia p95. La métrica `up` mide si Prometheus logra recolectar. Actuator informa la salud funcional, incluido PostgreSQL. El p95 requiere peticiones en la ventana consultada. Los dos paneles de CI muestran cobertura por líneas y tiempo de despliegue simulado al [importar un artefacto de una ejecución exitosa](ci/README.md#mediciones-y-grafana).
+
+En **Explore → Loki**, consulta `{application="order-manager"}` para ver ambos servicios, `{application="order-manager"} |~ "^WARN "` para advertencias y `{application="order-manager"} |~ "^ERROR "` para errores. Para reproducir un 404, consulta un ID que sepas que no existe. Los registros conservan las etiquetas `application`, `service` y `container`.
+
+### Apagado, reinicio y retiro
+
+- **Apagado normal**. Ejecuta `docker compose stop` para conservar contenedores y volúmenes.
+- **Reanudación o reinicio**. Usa `docker compose start` después de un apagado normal o `docker compose restart` para reiniciar los contenedores actuales. En un despliegue autorizado, aplica una imagen o configuración nueva con `docker compose up -d --build`.
+- **Retiro del stack**. `docker compose down` elimina los contenedores y redes del proyecto y conserva sus volúmenes nombrados.
+
+> **Eliminación definitiva.** `docker compose down -v` elimina los volúmenes de este proyecto y sus datos persistentes. Incluye PostgreSQL, históricos de Prometheus y Loki, estado de Grafana y posiciones de Alloy. Antes de ejecutarlo, confirma el proyecto objetivo, verifica respaldos y obtén autorización para descartar los datos.
+
+## Kubernetes con kind
+
+Requiere Docker, kind, kubectl y Helm. La [guía reproducible de kind](k8s/README.md) fija la imagen del nodo, construye y carga la imagen local, configura un kubeconfig aislado, crea los Secrets e instala PostgreSQL antes de la API. Aplica el overlay `k8s/overlays/local` e instala Alloy con Helm. Mantén el contexto explícito en cada comando.
+
+Los port-forwards de la guía usan `127.0.0.1:18098` para la API, `127.0.0.1:13000` para Grafana y `127.0.0.1:19090` para Prometheus. El modo `Test-Lab.ps1 -CheckPersistence` crea marcadores y recrea pods con estado. Resérvalo para una validación autorizada.
+
+## Amazon EKS y ECR
+
+Requiere AWS CLI autenticada, Docker, kubectl, Helm y autorización para crear recursos. La [guía de EKS estándar](k8s/overlays/eks-local-storage/README.md) incluye prevalidaciones, plantillas, despliegue en `us-east-1`, comprobaciones y retiro controlado. El escenario validado usa Kubernetes 1.35, un Managed Node Group y `k8s/overlays/eks-local-storage`. Los port-forwards de evidencia usan los puertos `28098`, `23000` y `29090` para API, Grafana y Prometheus.
+
+El flujo ECR construye una imagen `linux/amd64`, crea o selecciona un repositorio privado autorizado, inicia sesión mediante `aws ecr get-login-password` y `docker login --password-stdin`, publica una etiqueta y obtiene su digest con `aws ecr describe-images`. En una **copia** del overlay, cambia `images[].newName` por el registro y repositorio de la cuenta de destino y `images[].digest` por el digest publicado allí. Conserva `name: order-manager` y comprueba con `kubectl kustomize` que el Deployment use `repositorio@sha256:…`. El nodo necesita permisos de lectura sobre el registro. El digest incluido apunta a un artefacto privado anterior.
+
+Las restricciones de IAM de Learner Lab impidieron validar Auto Mode y EBS CSI con las identidades disponibles. El [overlay Auto Mode](k8s/overlays/eks) y las [plantillas AWS](k8s/aws) documentan alternativas sujetas a permisos. El render local solo comprueba la estructura de esos manifiestos.
+
+### Persistencia en EKS
+
+PostgreSQL, Prometheus, Grafana y Loki usan PVC con `order-manager-local`, con afinidad al único nodo y datos en su disco raíz. La persistencia se verificó al recrear pods **en el mismo nodo**. El reemplazo o la terminación del nodo quedó fuera de la prueba. Ambas operaciones pueden volver inaccesibles los PV y eliminar datos si se elimina el disco raíz. `Retain` regula la reclamación del PV. EC2 gestiona por separado el ciclo de vida del disco. Para recuperar los datos en otro nodo se necesita un respaldo externo y una restauración.
+
+EBS CSI permite provisionar discos independientes y adjuntarlos a un nodo compatible de la misma zona, sujeto a permisos y políticas. El almacenamiento local satisface el alcance de la prueba de recreación de pods. Los indicadores de la EP3 entregados por el equipo no exigen EBS CSI explícitamente. La [matriz de trazabilidad](ci/README.md#matriz-de-trazabilidad-ep3) distingue las evidencias disponibles y pendientes.
+
+## Pruebas y CI
+
+Con Java 17 y Maven, ejecuta `mvn -B clean verify`. Para repetir las pruebas Maven con Docker consulta la [guía de validación](k8s/README.md#validación-y-despliegue). Para el proxy usa `docker buildx build --progress plain --output type=cacheonly monitoring/docker-logs-proxy`.
+
+La suite Maven cubre el controlador, el servicio, las validaciones y la persistencia. Las tres pruebas Go verifican la política de acceso del proxy y los campos devueltos. La prueba de migración usa un PostgreSQL 16 temporal para crear un pedido con Spring Boot 3.5 y verificar su lectura con Spring Boot 4. Consulta los [resultados de la migración y la validación local](ci/migracion-spring-boot-4.md).
+
+La auditoría previa verificó Actuator, Prometheus, Grafana, logs y PVC en los tres entornos desplegados. Quedan pendientes una ejecución remota del workflow, una nueva validación funcional después de desplegar estas correcciones y la observación de la purga efectiva de Loki.
+
+GitHub Actions genera y enmascara credenciales efímeras de Compose. La limpieza con volúmenes se aplica al proyecto efímero del runner. Antes de desplegar, CI exige pruebas Maven, un mínimo del 75 % de cobertura por líneas, Gitleaks, el Quality Gate de SonarCloud y la política de Trivy. Consulta los [controles y el procedimiento para obtener evidencias](ci/README.md).
+
+Spring Boot 4.0.10 incorpora Spring Framework 7.0.11 y mantiene Java 17 como mínimo. [Requisitos oficiales](https://docs.spring.io/spring-boot/4.0/system-requirements.html)
+
+
+<details>
+<summary>Declaración y aportes de la Evaluación Parcial 2</summary>
 
 ## 9. Declaración de Uso de Inteligencia Artificial (IA)
 
@@ -217,3 +124,5 @@ En cumplimiento de las normativas éticas y formativas de la asignatura:
 
 ### Reflexión Personal — Nicolas Silva
 > "Durante este proyecto aprendí la importancia de utilizar herramientas DevOps como Docker, GitHub Actions y las pruebas automatizadas para facilitar el desarrollo y despliegue de aplicaciones. También comprendí cómo herramientas como SonarCloud y Trivy ayudan a mejorar la calidad del código y detectar posibles vulnerabilidades. Aunque surgieron dificultades durante la configuración y ejecución del proyecto, pude comprender mejor cómo resolver problemas técnicos. En conclusión, esta experiencia me permitió aplicar los conocimientos adquiridos en Ingeniería en Informática y fortalecer mis habilidades para futuros proyectos."
+
+</details>

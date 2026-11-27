@@ -1,0 +1,18 @@
+{
+  "clusterName": "order-manager-eks",
+  "nodegroupName": "local-storage",
+  "nodeRole": "REPLACE_NODE_ROLE_ARN",
+  "subnets": ["REPLACE_SUBNET_1A"],
+  "instanceTypes": ["m6i.large"],
+  "capacityType": "ON_DEMAND",
+  "amiType": "AL2023_x86_64_STANDARD",
+  "diskSize": 60,
+  "scalingConfig": {
+    "minSize": 1,
+    "maxSize": 1,
+    "desiredSize": 1
+  },
+  "tags": {
+    "Project": "order-manager-eks"
+  }
+}

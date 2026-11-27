@@ -15,6 +15,8 @@ import java.util.Objects;
 @Table(name = "orders")
 public class Order {
 
+    private static final BigDecimal MAX_TOTAL = new BigDecimal("9999999999.99");
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -65,17 +67,14 @@ public class Order {
      * Agrega un ítem y recalcula el total.
      */
     public void addItem(OrderItem item) {
-        this.items.add(item);
-        recalculateTotal();
-    }
-
-    /**
-     * Recalcula el monto total sumando los subtotales.
-     */
-    private void recalculateTotal() {
-        this.totalAmount = items.stream()
+        BigDecimal newTotal = items.stream()
                 .map(OrderItem::getSubtotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(item.getSubtotal(), BigDecimal::add);
+        if (newTotal.compareTo(MAX_TOTAL) > 0) {
+            throw new IllegalArgumentException("El monto total del pedido supera el máximo permitido");
+        }
+        this.items.add(item);
+        this.totalAmount = newTotal;
     }
 
     public boolean canBeModified() {

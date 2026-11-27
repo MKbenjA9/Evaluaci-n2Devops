@@ -1,0 +1,11 @@
+{
+  "clusterName": "order-manager-lab",
+  "addonName": "aws-ebs-csi-driver",
+  "addonVersion": "v1.68.1-eksbuild.1",
+  "podIdentityAssociations": [
+    {
+      "serviceAccount": "ebs-csi-controller-sa",
+      "roleArn": "REPLACE_EBS_CSI_ROLE_ARN"
+    }
+  ]
+}

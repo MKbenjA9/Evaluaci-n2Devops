@@ -5,6 +5,7 @@ import com.example.ordermanager.dto.CreateOrderRequest;
 import com.example.ordermanager.exception.InvalidOrderStateException;
 import com.example.ordermanager.exception.OrderNotFoundException;
 import com.example.ordermanager.model.Order;
+import com.example.ordermanager.model.OrderItem;
 import com.example.ordermanager.model.OrderStatus;
 import com.example.ordermanager.repository.OrderRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -87,6 +88,43 @@ class OrderServiceTest {
 
         assertEquals(0, result.getItems().size());
         assertEquals(BigDecimal.ZERO, result.getTotalAmount());
+    }
+
+    @Test
+    void shouldAcceptMaximumPostgresOrderTotal() {
+        when(repository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setCustomerName("Test");
+        request.setItems(List.of(
+                new AddItemRequest("Item A", 100, new BigDecimal("99999999.99")),
+                new AddItemRequest("Item B", 1, new BigDecimal("0.99"))));
+
+        assertEquals(new BigDecimal("9999999999.99"), service.createOrder(request).getTotalAmount());
+    }
+
+    @Test
+    void shouldRejectOrderTotalOverflowBeforeSaving() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setCustomerName("Test");
+        request.setItems(List.of(
+                new AddItemRequest("Item A", 100, new BigDecimal("99999999.99")),
+                new AddItemRequest("Item B", 1, new BigDecimal("1.00"))));
+
+        assertThrows(IllegalArgumentException.class, () -> service.createOrder(request));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void shouldLeaveOrderUnchangedWhenAddedItemWouldOverflow() {
+        Order order = new Order("Test");
+        order.addItem(new OrderItem("Item A", 100, new BigDecimal("99999999.99")));
+        when(repository.findById(1L)).thenReturn(Optional.of(order));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.addItem(1L, new AddItemRequest("Item B", 1, new BigDecimal("1.00"))));
+        assertEquals(1, order.getItems().size());
+        assertEquals(new BigDecimal("9999999999.00"), order.getTotalAmount());
+        verify(repository, never()).save(any(Order.class));
     }
 
     @Test

@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+
+scrape_configs:
+  - job_name: order-manager
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["order-manager.order-manager.svc.cluster.local:8098"]
